@@ -29,6 +29,24 @@ bool IBLT::HashTableEntry::isPure() const
     return false;
 }
 
+bool IBLT::HashTableEntry::empty() const
+{
+    return (count == 0 && keySum == 0 && keyCheck == 0);
+}
+
+void IBLT::HashTableEntry::addValue(const std::vector<uint8_t> v)
+{
+    if (v.empty()) {
+        return;
+    }
+    if (valueSum.size() < v.size()) {
+        valueSum.resize(v.size());
+    }
+    for (size_t i = 0; i < v.size(); i++) {
+        valueSum[i] ^= v[i];
+    }
+}
+
 IBLT::IBLT(size_t _expectedNumEntries, size_t _valueSize) :
     valueSize(_valueSize)
 {
@@ -38,6 +56,12 @@ IBLT::IBLT(size_t _expectedNumEntries, size_t _valueSize) :
     // ... make nEntries exactly divisible by N_HASH
     while (N_HASH * (nEntries/N_HASH) != nEntries) ++nEntries;
     hashTable.resize(nEntries);
+}
+
+IBLT::IBLT(const IBLT& other)
+{
+    valueSize = other.valueSize;
+    hashTable = other.hashTable;
 }
 
 IBLT::~IBLT()
@@ -57,16 +81,13 @@ void IBLT::_insert(int plusOrMinus, uint64_t k, const std::vector<uint8_t> v)
         uint32_t h = MurmurHash3(i, kvec);
         IBLT::HashTableEntry& entry = hashTable.at(startEntry + (h%bucketsPerHash));
         entry.count += plusOrMinus;
-        entry.keySum = entry.keySum^k;
-        entry.keyCheck = entry.keyCheck^MurmurHash3(N_HASHCHECK, kvec);
-        if (entry.valueSum.empty()) {
-            entry.valueSum.resize(valueSize);
-        }
-        for (size_t j = 0; j < valueSize; j++) {
-            entry.valueSum[j] = entry.valueSum[j]^v[j];
-        }
-        if (entry.count == 0 && entry.keySum == 0 && entry.keyCheck == 0) {
+        entry.keySum ^= k;
+        entry.keyCheck ^= MurmurHash3(N_HASHCHECK, kvec);
+        if (entry.empty()) {
             entry.valueSum.clear();
+        }
+        else {
+            entry.addValue(v);
         }
     }
 }
@@ -94,7 +115,7 @@ bool IBLT::get(uint64_t k, std::vector<uint8_t>& result) const
         uint32_t h = MurmurHash3(i, kvec);
         const IBLT::HashTableEntry& entry = hashTable.at(startEntry + (h%bucketsPerHash));
 
-        if (entry.count == 0) {
+        if (entry.empty()) {
             // Definitely not in table. Leave
             // result empty, return true.
             return true;
@@ -125,7 +146,7 @@ bool IBLT::get(uint64_t k, std::vector<uint8_t>& result) const
                 return true;
             }
             ++nErased;
-            peeled.erase(entry.keySum, entry.valueSum);
+            peeled._insert(-entry.count, entry.keySum, entry.valueSum);
         }
     }
     if (nErased > 0) {
@@ -135,7 +156,8 @@ bool IBLT::get(uint64_t k, std::vector<uint8_t>& result) const
     return false;
 }
 
-bool IBLT::listEntries(std::set<std::pair<uint64_t,std::vector<uint8_t> > >& result) const
+bool IBLT::listEntries(std::set<std::pair<uint64_t,std::vector<uint8_t> > >& positive,
+                       std::set<std::pair<uint64_t,std::vector<uint8_t> > >& negative) const
 {
     IBLT peeled = *this;
 
@@ -145,19 +167,48 @@ bool IBLT::listEntries(std::set<std::pair<uint64_t,std::vector<uint8_t> > >& res
         for (size_t i = 0; i < peeled.hashTable.size(); i++) {
             IBLT::HashTableEntry& entry = peeled.hashTable.at(i);
             if (entry.isPure()) {
-                result.insert(std::make_pair(entry.keySum, entry.valueSum));
+                if (entry.count == 1) {
+                    positive.insert(std::make_pair(entry.keySum, entry.valueSum));
+                }
+                else {
+                    negative.insert(std::make_pair(entry.keySum, entry.valueSum));
+                }
+                peeled._insert(-entry.count, entry.keySum, entry.valueSum);
                 ++nErased;
-                peeled.erase(entry.keySum, entry.valueSum);
             }
         }
     } while (nErased > 0);
 
-    // If any buckets for one of the hash functions has a positive count,
+    // If any buckets for one of the hash functions is not empty,
     // then we didn't peel them all:
     for (size_t i = 0; i < peeled.hashTable.size()/N_HASH; i++) {
-        if (peeled.hashTable.at(i).count > 0) return false;
+        if (peeled.hashTable.at(i).empty() != true) return false;
     }
     return true;
+}
+
+IBLT IBLT::operator-(const IBLT& other)
+{
+    // IBLT's must be same params/size:
+    assert(valueSize == other.valueSize);
+    assert(hashTable.size() == other.hashTable.size());
+
+    IBLT result(*this);
+    for (size_t i = 0; i < hashTable.size(); i++) {
+        IBLT::HashTableEntry& e1 = result.hashTable.at(i);
+        const IBLT::HashTableEntry& e2 = other.hashTable.at(i);
+        e1.count -= e2.count;
+        e1.keySum ^= e2.keySum;
+        e1.keyCheck ^= e2.keyCheck;
+        if (e1.empty()) {
+            e1.valueSum.clear();
+        }
+        else {
+            e1.addValue(e2.valueSum);
+        }
+    }
+
+    return result;
 }
 
 // For debugging during development:
@@ -165,10 +216,12 @@ std::string IBLT::DumpTable() const
 {
     std::ostringstream result;
 
-    result << "entry count keySum\n";
+    result << "count keySum keyCheckMatch\n";
     for (size_t i = 0; i < hashTable.size(); i++) {
         const IBLT::HashTableEntry& entry = hashTable.at(i);
-        result << i << " " << entry.count << " " << entry.keySum << "\n";
+        result << entry.count << " " << entry.keySum << " ";
+        result << (MurmurHash3(N_HASHCHECK, ToVec(entry.keySum)) == entry.keyCheck ? "true" : "false");
+        result << "\n";
     }
 
     return result.str();

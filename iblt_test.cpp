@@ -112,8 +112,64 @@ void TestList()
         expected.insert(std::make_pair(i, PseudoRandomValue(i*2)));
     }
     std::set<std::pair<uint64_t,std::vector<uint8_t> > > entries;
-    bool fAllFound = t.listEntries(entries);
+    bool fAllFound = t.listEntries(entries, entries);
     assert(fAllFound && entries == expected);
+}
+
+void TestMinus()
+{
+    IBLT t1(11, 4);
+    IBLT t2(11, 4);
+
+    for (int i = 0; i < 195; i++) {
+        t1.insert(i, PseudoRandomValue(i));
+    }
+    for (int i = 5; i < 200; i++) {
+        t2.insert(i, PseudoRandomValue(i));
+    }
+
+    IBLT diff = t1-t2;
+
+    // Should end up with 10 differences, 5 positive and 5 negative:
+    std::set<std::pair<uint64_t,std::vector<uint8_t> > > expectedPositive;
+    std::set<std::pair<uint64_t,std::vector<uint8_t> > > expectedNegative;
+    for (int i = 0; i < 5; i++) {
+        expectedPositive.insert(std::make_pair(i, PseudoRandomValue(i)));
+        expectedNegative.insert(std::make_pair(195+i, PseudoRandomValue(195+i)));
+    }
+    std::set<std::pair<uint64_t,std::vector<uint8_t> > > positive;
+    std::set<std::pair<uint64_t,std::vector<uint8_t> > > negative;
+    bool allDecoded = diff.listEntries(positive, negative);
+    assert(allDecoded);
+    assert(positive == expectedPositive);
+    assert(negative == expectedNegative);
+
+    positive.clear(); negative.clear();
+    allDecoded = (t2-t1).listEntries(positive, negative);
+    assert(allDecoded);
+    assert(positive == expectedNegative);  // Opposite subtraction, opposite results
+    assert(negative == expectedPositive);
+
+
+    IBLT emptyIBLT(11, 4);
+    std::set<std::pair<uint64_t,std::vector<uint8_t> > > emptySet;
+
+    // Test edge cases for empty IBLT:
+    allDecoded = emptyIBLT.listEntries(emptySet, emptySet);
+    assert(allDecoded);
+    assert(emptySet.empty());
+
+    positive.clear(); negative.clear();
+    allDecoded = (diff-emptyIBLT).listEntries(positive, negative);
+    assert(allDecoded);
+    assert(positive == expectedPositive);
+    assert(negative == expectedNegative);
+
+    positive.clear(); negative.clear();
+    allDecoded = (emptyIBLT-diff).listEntries(positive, negative);
+    assert(allDecoded);
+    assert(positive == expectedNegative); // Opposite subtraction, opposite results
+    assert(negative == expectedPositive);
 }
 
 int main()
@@ -123,6 +179,7 @@ int main()
     TestInsertErase();
     TestOverload();
     TestList();
+    TestMinus();
 
     std::cout << "Tests successful.\n";
 

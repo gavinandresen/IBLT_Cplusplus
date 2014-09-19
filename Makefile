@@ -6,7 +6,7 @@ TARGET = iblt_test
 
 CXX = clang++
 CCLD = clang++
-CXXFLAGS = -g -Wall -std=c++11
+CXXFLAGS = -g -ggdb -Wall -std=c++11
 
 all: $(TARGET)
 

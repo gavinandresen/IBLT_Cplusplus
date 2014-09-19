@@ -21,6 +21,7 @@ class IBLT
 {
 public:
     IBLT(size_t _expectedNumEntries, size_t _ValueSize);
+    IBLT(const IBLT& other);
     virtual ~IBLT();
 
     void insert(uint64_t k, const std::vector<uint8_t> v);
@@ -32,15 +33,19 @@ public:
     // not k is in the table.
     bool get(uint64_t k, std::vector<uint8_t>& result) const;
 
-    // Returns true and all key/value pairs in result if all can be
-    // decoded; otherwise, returns false and as many key/value pairs as
-    // could be decoded
-    bool listEntries(std::set<std::pair<uint64_t,std::vector<uint8_t> > >& result) const;
+    // Adds entries to the given sets:
+    //  positive is all entries that were inserted
+    //  negative is all entreis that were erased but never added (or
+    //   if the IBLT = A-B, all entries in B that are not in A)
+    // Returns true if all entries could be decoded, false otherwise.
+    bool listEntries(std::set<std::pair<uint64_t,std::vector<uint8_t> > >& positive,
+        std::set<std::pair<uint64_t,std::vector<uint8_t> > >& negative) const;
 
-    // ??? this?  Or write an IBLTIterator class ?
-    // template<typename output_iterator>
-    // bool listEntries(output_iterator saveTo) const;
 
+    // Subtract two IBLTs
+    IBLT operator-(const IBLT& other);
+
+    // For debugging:
     std::string DumpTable() const;
 
 private:
@@ -51,17 +56,17 @@ private:
     class HashTableEntry
     {
     public:
-        size_t count;
+        int32_t count;
         uint64_t keySum;
         uint32_t keyCheck;
         std::vector<uint8_t> valueSum;
 
         bool isPure() const;
+        bool empty() const;
+        void addValue(const std::vector<uint8_t> v);
     };
 
     std::vector<HashTableEntry> hashTable;
 };
-
-// TODO: operator+ and operator-
 
 #endif /* IBLT_H */
