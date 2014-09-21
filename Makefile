@@ -4,9 +4,9 @@ OBJECTS = $(SOURCES:.cpp=.o)
 
 TARGET = iblt_test
 
-CXX = clang++
-CCLD = clang++
-CXXFLAGS = -g -ggdb -Wall -std=c++11
+CXX = c++
+CCLD = c++
+CXXFLAGS = -g -ggdb -Wall
 
 all: $(TARGET)
 
