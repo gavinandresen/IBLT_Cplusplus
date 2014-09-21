@@ -187,7 +187,7 @@ bool IBLT::listEntries(std::set<std::pair<uint64_t,std::vector<uint8_t> > >& pos
     return true;
 }
 
-IBLT IBLT::operator-(const IBLT& other)
+IBLT IBLT::operator-(const IBLT& other) const
 {
     // IBLT's must be same params/size:
     assert(valueSize == other.valueSize);

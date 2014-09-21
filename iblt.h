@@ -43,7 +43,7 @@ public:
 
 
     // Subtract two IBLTs
-    IBLT operator-(const IBLT& other);
+    IBLT operator-(const IBLT& other) const;
 
     // For debugging:
     std::string DumpTable() const;
